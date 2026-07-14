@@ -4,6 +4,7 @@ import numpy as np
 import json
 import datetime
 import os
+import sys
 
 CSV_PATH = 'portfolio.csv'
 JSON_PATH = 'docs/data.json'
@@ -15,6 +16,7 @@ BENCHMARKS = {
 }
 
 def calc_max_drawdown(series):
+    if series.empty: return 0.0
     roll_max = series.cummax()
     drawdown = series / roll_max - 1.0
     return drawdown.min()
@@ -31,15 +33,22 @@ def main():
     etfs = list(BENCHMARKS.values())
     all_tickers = tickers + etfs
 
-    hist_data = yf.download(all_tickers, start=earliest_date, group_by='ticker')
+    # threads=False prevents the "database is locked" error in GitHub Actions
+    hist_data = yf.download(all_tickers, start=earliest_date, group_by='ticker', threads=False)
     
+    if hist_data.empty:
+        print("Error: yfinance failed to download any data. Exiting.")
+        sys.exit(1)
+
     prices = pd.DataFrame(index=hist_data.index)
     for t in all_tickers:
         if len(all_tickers) == 1:
              prices[t] = hist_data['Close']
         else:
              prices[t] = hist_data[t]['Close']
-    prices.fillna(method='ffill', inplace=True)
+             
+    # Fixed pandas deprecation warning
+    prices.ffill(inplace=True)
 
     port_val = pd.Series(0.0, index=prices.index)
     bench_val = pd.Series(0.0, index=prices.index)
