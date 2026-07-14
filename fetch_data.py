@@ -5,6 +5,7 @@ import json
 import datetime
 import os
 import sys
+import requests
 
 CSV_PATH = 'portfolio.csv'
 JSON_PATH = 'docs/data.json'
@@ -33,8 +34,12 @@ def main():
     etfs = list(BENCHMARKS.values())
     all_tickers = tickers + etfs
 
-    # threads=False prevents the "database is locked" error in GitHub Actions
-    hist_data = yf.download(all_tickers, start=earliest_date, group_by='ticker', threads=False)
+    # Bypass Yahoo Finance blocking GitHub Actions IPs
+    session = requests.Session()
+    session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'})
+
+    # threads=False prevents SQLite database locks
+    hist_data = yf.download(all_tickers, start=earliest_date, group_by='ticker', threads=False, session=session)
     
     if hist_data.empty:
         print("Error: yfinance failed to download any data. Exiting.")
@@ -45,9 +50,11 @@ def main():
         if len(all_tickers) == 1:
              prices[t] = hist_data['Close']
         else:
-             prices[t] = hist_data[t]['Close']
-             
-    # Fixed pandas deprecation warning
+             if t in hist_data.columns.levels[0]:
+                 prices[t] = hist_data[t]['Close']
+             else:
+                 prices[t] = np.nan
+                 
     prices.ffill(inplace=True)
 
     port_val = pd.Series(0.0, index=prices.index)
@@ -69,12 +76,12 @@ def main():
         try:
             bench_buy_price = prices[bench_ticker].loc[prices.index >= buy_date].iloc[0]
         except IndexError:
-            bench_buy_price = prices[bench_ticker].iloc[-1] 
+            bench_buy_price = prices[bench_ticker].iloc[-1] if not prices[bench_ticker].dropna().empty else buy_price
             
         bench_qty = initial_investment / bench_buy_price
         bench_val[prices.index >= buy_date] += prices[bench_ticker][prices.index >= buy_date] * bench_qty
 
-        ticker_obj = yf.Ticker(t)
+        ticker_obj = yf.Ticker(t, session=session)
         fast_info = ticker_obj.fast_info
         
         try:
@@ -83,7 +90,7 @@ def main():
             day_change_pct = ((curr_price - prev_close) / prev_close) * 100
             mcap = fast_info['market_cap']
         except:
-            curr_price = prices[t].iloc[-1]
+            curr_price = prices[t].iloc[-1] if not prices[t].dropna().empty else buy_price
             day_change_pct = 0
             mcap = 0
 
@@ -105,12 +112,12 @@ def main():
             'value': round(curr_price * qty, 2)
         })
 
-    days_held = (prices.index[-1] - earliest_date).days
+    days_held = (prices.index[-1] - earliest_date).days if not prices.empty else 1
     years_held = max(days_held / 365.25, 0.01)
     
     total_invested = (df['Quantity'] * df['Buy_Price']).sum()
-    curr_port_val = port_val.iloc[-1]
-    curr_bench_val = bench_val.iloc[-1]
+    curr_port_val = port_val.iloc[-1] if not port_val.empty else total_invested
+    curr_bench_val = bench_val.iloc[-1] if not bench_val.empty else total_invested
     
     port_ret = (curr_port_val / total_invested) - 1
     bench_ret = (curr_bench_val / total_invested) - 1
