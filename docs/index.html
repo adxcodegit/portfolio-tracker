@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-main: #0a0a0a;
+            --bg-card: #121212;
+            --text-primary: #ffffff;
+            --text-secondary: #7f92a3; /* Muted blue-gray from the subtitle */
+            --accent-yellow: #d5b34a; /* Yellow from the logo dot and button */
+            --border-color: #222222;
+            --green: #4ade80;
+            --red: #f87171;
+        }
+        
+        body {
+            background-color: var(--bg-main);
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 3rem 2rem;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin: 0 0 0.5rem 0;
+        }
+        
+        h1 span {
+            color: var(--accent-yellow);
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.5rem;
+        }
+
+        .timestamp {
+            color: var(--accent-yellow);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-weight: 600;
+            margin-bottom: 3rem;
+            display: flex;
+            align-items: center;
+        }
+
+        .timestamp::before {
+            content: "";
+            display: inline-block;
+            width: 20px;
+            height: 1px;
+            background-color: var(--accent-yellow);
+            margin-right: 10px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }
+
+        .card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            padding: 1.5rem;
+            border-radius: 4px;
+        }
+
+        .card h3 {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            margin-top: 0;
+            margin-bottom: 0.5rem;
+        }
+
+        .card .value {
+            font-size: 1.75rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+        }
+
+        .pos { color: var(--green); }
+        .neg { color: var(--red); }
+        
+        .chart-container {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            padding: 1.5rem;
+            border-radius: 4px;
+            margin-bottom: 3rem;
+            height: 400px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+        
+        th, td {
+            padding: 1rem 0.5rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        th {
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+        
+        td strong {
+            font-weight: 600;
+        }
+
+        tr:hover td {
+            background-color: rgba(255, 255, 255, 0.02);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Portfolio Tracker<span>.</span></h1>
+        <div class="timestamp" id="timestamp">Loading data...</div>
+
+        <div class="grid" id="summary-grid"></div>
+
+        <div class="chart-container">
+            <canvas id="portfolioChart"></canvas>
+        </div>
+
+        <h2>Holdings</h2>
+        <div style="overflow-x: auto;">
+            <table id="holdings-table">
+                <thead>
+                    <tr>
+                        <th>Ticker</th>
+                        <th>Sector</th>
+                        <th>Category</th>
+                        <th>Qty</th>
+                        <th>Avg Price</th>
+                        <th>LTP</th>
+                        <th>Day %</th>
+                        <th>Total %</th>
+                        <th>Mkt Cap (Cr)</th>
+                        <th>P/E</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const formatMoney = (val) => '₹' + val.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+        const formatPct = (val) => {
+            const cls = val >= 0 ? 'pos' : 'neg';
+            const sign = val >= 0 ? '+' : '';
+            return `<span class="${cls}">${sign}${val.toFixed(2)}%</span>`;
+        };
+
+        fetch('data.json')
+            .then(res => res.json())
+            .then(data => {
+                const d = new Date(data.timestamp);
+                document.getElementById('timestamp').innerText = `Data as of: ${d.toLocaleString('en-IN')} (IST). ~15 min delayed.`;
+                
+                const s = data.summary;
+                document.getElementById('summary-grid').innerHTML = `
+                    <div class="card"><h3>Invested</h3><div class="value">${formatMoney(s.invested)}</div></div>
+                    <div class="card"><h3>Portfolio Value</h3><div class="value">${formatMoney(s.port_value)}</div><div style="margin-top: 0.25rem;">${formatPct(s.port_return_pct)}</div></div>
+                    <div class="card"><h3>Blended Benchmark</h3><div class="value">${formatMoney(s.bench_value)}</div><div style="margin-top: 0.25rem;">${formatPct(s.bench_return_pct)}</div></div>
+                    <div class="card"><h3>CAGR (Port / Bench)</h3><div class="value" style="font-size:1.25rem;">${s.port_cagr}% / ${s.bench_cagr}%</div></div>
+                    <div class="card"><h3>Max Drawdown</h3><div class="value" style="font-size:1.25rem;">${s.port_max_dd}% / ${s.bench_max_dd}%</div></div>
+                `;
+                
+                const tbody = document.querySelector('#holdings-table tbody');
+                data.holdings.forEach(h => {
+                    tbody.innerHTML += `
+                        <tr>
+                            <td><strong>${h.ticker.replace('.NS', '')}</strong></td>
+                            <td style="color: var(--text-secondary);">${h.sector}</td>
+                            <td style="color: var(--text-secondary);">${h.category}</td>
+                            <td>${h.qty}</td>
+                            <td>₹${h.buy_price}</td>
+                            <td>₹${h.curr_price}</td>
+                            <td>${formatPct(h.day_change)}</td>
+                            <td>${formatPct(h.total_change)}</td>
+                            <td>${h.mcap_cr}</td>
+                            <td>${h.pe}</td>
+                        </tr>
+                    `;
+                });
+
+                const ctx = document.getElementById('portfolioChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: data.chart.labels,
+                        datasets: [
+                            { 
+                                label: 'Portfolio Value (₹)', 
+                                data: data.chart.portfolio, 
+                                borderColor: '#d5b34a', 
+                                backgroundColor: 'rgba(213, 179, 74, 0.05)', 
+                                borderWidth: 2, 
+                                fill: true, 
+                                pointRadius: 0,
+                                tension: 0.1
+                            },
+                            { 
+                                label: 'Blended Benchmark (₹)', 
+                                data: data.chart.benchmark, 
+                                borderColor: '#7f92a3', 
+                                borderWidth: 2, 
+                                borderDash: [5, 5], 
+                                pointRadius: 0,
+                                tension: 0.1
+                            }
+                        ]
+                    },
+                    options: { 
+                        responsive: true, 
+                        maintainAspectRatio: false, 
+                        interaction: { mode: 'index', intersect: false }, 
+                        plugins: { 
+                            legend: { labels: { color: '#ffffff', font: { family: 'Inter', size: 13 } } },
+                            tooltip: {
+                                backgroundColor: '#121212',
+                                titleColor: '#7f92a3',
+                                bodyColor: '#ffffff',
+                                borderColor: '#222222',
+                                borderWidth: 1
+                            }
+                        }, 
+                        scales: { 
+                            x: { ticks: { color: '#7f92a3', font: { family: 'Inter' } }, grid: { color: '#222222' } }, 
+                            y: { ticks: { color: '#7f92a3', font: { family: 'Inter' } }, grid: { color: '#222222' } } 
+                        } 
+                    }
+                });
+            });
+    </script>
+</body>
+</html>
